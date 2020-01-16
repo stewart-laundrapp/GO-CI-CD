@@ -1,0 +1,91 @@
+#!/bin/bash
+#Needed for local development
+eval $(minikube docker-env)
+# Timestamp Function
+timestamp() {
+	date +"%T"
+}
+
+# Temporary file for stderr redirects
+tmpfile=$(mktemp)
+
+# Go build
+buildTest() {
+  echo "$(timestamp): running unit test"
+
+  if go test; then
+    echo "Tests Passed"
+  else
+    echo "Tests Failed"
+    exit
+  fi
+}
+
+build () {
+	echo "⏲️	$(timestamp): started build script..."
+	echo "🏗️	$(timestamp): building cicdexample"
+	go build 2>tmpfile
+	if [ -s tmpfile ]; then
+		cat tmpfile
+		echo "❌	$(timestamp): compilation error, exiting"
+		exit 1
+	fi
+}
+
+# Build a docker image
+buildDocker() {
+	echo "🐋	$(timestamp): building image example:test"
+	docker login
+	docker build -t go-cidi:test .
+}
+
+# Deploy to Minikube using kubectl
+deploy() {
+	echo "🌧️	 $(timestamp): deploying to Minikube"
+	kubectl delete deployment example
+	kubectl delete service example
+	kubectl apply -f deploy.yml
+ #	After deploy check to see if the the service is running correctly
+  sleep 7
+  echo "
+-------------Pod Status-------------
+  "
+  kubectl get pods -l app=example
+  echo "
+------------------------------------
+  "
+}
+
+# Orchestrate
+if [[ $1 = "build" ]]; then
+	if [[ $2 = "docker" ]]; then
+		if [[ $3 = "deploy" ]]; then
+		  buildTest
+			build
+			buildDocker
+			deploy
+		else
+		  buildTest
+			build
+			buildDocker
+		fi
+		echo "✔️	$(timestamp): complete."
+		echo "👋	$(timestamp): exiting..."
+	elif [[ $2 = "bin" ]]; then
+	  buildTest
+		build
+		echo "✔️	$(timestamp): complete."
+		echo "👋	$(timestamp): exiting..."
+	else
+		echo "🤔   $(timestamp): missing build argument"
+	fi
+else
+	if [[ $1 = "--help" ]]; then
+		echo "build - start a build to produce artifacts"
+		echo "	docker - produces docker images"
+		echo " 	bin - produces executable binaries"
+	else
+		echo "🤔	$(timestamp): no arguments passed, type --help for a list of arguments"
+	fi
+fi
+rm -f tmp
